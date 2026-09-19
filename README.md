@@ -1,78 +1,77 @@
 # dsh-auto-compact
 
-**中文** · [English](./README.en.md)
+**A session-level automatic context-compaction plugin for DeepSeek Harness (DSH).**
 
-**会话级自动上下文压缩插件**（DeepSeek Harness / DSH）
+![Auto-compact threshold panel](docs/screenshots/panel.png)
 
-![自动压缩阈值面板](docs/screenshots/panel.png)
+**dsh-auto-compact** renders two rings to the right of the input area: a **usage ring** (color-coded green/yellow/red by load) showing real-time context consumption, and a **threshold ring** (orange) indicating your auto-compact trigger point. Click either ring to open the settings panel where you can drag a slider to set the compaction threshold for that session (1%–90%, **default 70%**). The panel displays both percentages and actual token counts (used/total). Whenever usage exceeds the threshold, the plugin automatically triggers a context compaction — it checks once before every step in a turn and once more when the turn ends — then injects the compacted summary back into the context so the session continues naturally, with no manual intervention and no extra "continue" message.
 
-在输入区右侧显示一个阈值圆环：当前会话上下文用量实时显示，拖动滑杆设置该会话的压缩阈值（1%–90%，**默认 50%**）。每当用量超过阈值，插件自动触发上下文压缩（compact）——回合中每走一步之前检查一次，回合结束时再检查一次——压缩摘要注入上下文后会话自然继续，全程无需手动干预，也不发送任何「继续」消息。
+## Features
 
-## 特性
+- 🔴🟢 **Dual-ring indicator** — left ring shows live context usage (green <50%, yellow 50–80%, red >80%), right ring shows your threshold setting (orange)
+- 📊 **Real-time usage with token counts** — same source as the built-in ContextMeter (`useProjection("contextPressure")`), refreshed live; panel displays both percentages and actual used/total tokens
+- 🎚️ **Fine 1%–90% tuning** — 1% steps for precise control (**defaults to 70% when unset**)
+- 🤖 **Fully automatic** — checked before each step in a turn and at turn end → auto-compacts over threshold → summary injected and the turn continues naturally
+- 🛡️ **Crash-safe** — all checks run inside `agent/pre-step` (waterfall middleware) and `agent/turn-stopping` (serial event), fully wrapped in try/catch, never throwing
+- 💾 **Persistent** — thresholds stored under the `dsh-auto-compact` namespace in `settings.yaml`, surviving restarts
+- 🧊 **Coexists with the built-in safety net** — DSH's own `compaction-basic` (default 80% pressure threshold) remains as a fallback, without interference
 
-- 🔴 **会话级阈值**：每个会话独立设置，互不影响（按 `sessionId` 持久化）
-- 📊 **实时用量**：与自带 ContextMeter 同源（`useProjection("contextPressure")`），面板打开即实时刷新，无需轮询
-- 🎚️ **1%–90% 细腻调节**：步进 1%，适合精细控制（**未设置时默认 50%**）
-- 🤖 **全自动**：回合中每步前 + 回合结束自动检测 → 超阈值自动 compact → 摘要注入后自然继续
-- 🛡️ **零崩溃风险**：所有检查都在 `agent/pre-step`（waterfall 中间件）与 `agent/turn-stopping`（串行事件）里做，全程 try/catch，绝不抛出
-- 💾 **持久化**：阈值存于 `settings.yaml` 的 `dsh-auto-compact` 命名空间，重启不丢
-- 🧊 **与内置安全网并存**：DSH 自带的 `compaction-basic`（默认 80% 压力阈值）保留为兜底，互不干扰
+## Installation
 
-## 安装
+**Prerequisites**: DSH installed and running (`dsh web` works), Node.js ≥ 20, pnpm ≥ 10.
 
-**前置**：已装好 DSH（`dsh web` 能正常运行），Node.js ≥ 20、pnpm ≥ 10。
-
-> **从旧版 auto-compact 升级**：旧包名是 `auto-compact`，新包名是 `dsh-auto-compact`。请先卸载旧包再装新版，避免双挂载（两个 Host 半、两个圆环）：
+> **Upgrading from the old `auto-compact`**: the old package was named `auto-compact`, the new one is `dsh-auto-compact`. Uninstall the old package first to avoid double-mounting (two Host halves, two rings):
 > ```bash
 > npx -y --package @deepseek-ai/dsh dsh plugin --profile web remove auto-compact
 > ```
 
-### 一键安装（推荐，复制粘贴即可）
+### One-shot install (recommended, copy & paste)
 
-**macOS / Linux**（Windows 装 Git Bash 或 WSL 也可）：
+**macOS / Linux** (Windows via Git Bash or WSL works too):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JohnathonYe/auto-compact/main/scripts/install.sh | bash
 ```
 
-脚本自动完成全部步骤：安装 npm 依赖 → 注册官方挂载（`dsh.profile.bundles`）→ 清理旧版残留的挂载行。你只需要：
+The script handles everything: install npm dependencies → register the official mount (`dsh.profile.bundles`) → clean up leftover mount lines from old versions. All you need to do:
 
-1. 跑上面这一条命令
-2. **重启 DSH**（装完后脚本会提示命令；也可以加上 `--restart` 让它自动重启：`curl ... | bash -s --restart`）
-3. 强刷浏览器（macOS `Cmd+Shift+R` / Windows·Linux `Ctrl+Shift+R`），输入区右侧出现阈值圆环 ✅
+1. Run that single command
+2. **Restart DSH** (the script prints the command when done; you can also add `--restart` to auto-restart: `curl ... | bash -s --restart`)
+3. Hard-refresh the browser (macOS `Cmd+Shift+R` / Windows·Linux `Ctrl+Shift+R`) — the threshold ring appears to the right of the input area ✅
 
-> 脚本内部已自动处理：`dsh` 命令通常不在全局 PATH（DSH 一般经 npx 安装，直接敲 `dsh` 会报 command not found），脚本会自动改用 npx 调用，无需用户手动处理。
+> The script handles this automatically: `dsh` is usually not on the global PATH (DSH is typically installed via npx, so typing `dsh` directly gives command not found); the script falls back to invoking it via npx, no user action needed.
 
-### 或者用
+### Or
 
 ```bash
 npx -y --package @deepseek-ai/dsh dsh plugin --profile web add dsh-auto-compact
 ```
 
-装完同样需要重启 DSH + 强刷浏览器。
+After installing you still need to restart DSH and hard-refresh the browser.
 
-### 更新 / 卸载
+### Update / Uninstall
 
-- **更新**：重跑一键安装命令（或手动命令），装完重启 DSH + 强刷浏览器
-- **卸载**：`npx -y --package @deepseek-ai/dsh dsh plugin --profile web remove dsh-auto-compact`，卸载后重启生效；若曾手动在 `cordis.patch.yml` 写过挂载行，一并删除，避免双挂载（两个 Host 半、两个圆环）
+- **Update**: re-run the one-shot install command (or the manual command), then restart DSH and hard-refresh the browser
+- **Uninstall**: `npx -y --package @deepseek-ai/dsh dsh plugin --profile web remove dsh-auto-compact`, then restart to take effect; if you manually wrote a mount line in `cordis.patch.yml`, remove it too to avoid double-mounting (two Host halves, two rings)
 
-## 使用
+## Usage
 
-1. 点击输入区右侧的圆环，打开面板
-2. 面板显示当前会话的实时上下文用量（百分比）
-3. 拖动滑杆设置阈值（1%–90%，会话级独立；**未拖动过的新会话默认 50%**，仅当前会话生效，不影响其他会话）
-4. 之后每当用量超过阈值（回合中某一步之前，或回合结束时），插件自动执行 compact 并继续
+1. Click either ring to the right of the input area to open the settings panel
+2. The **left ring** shows your current context usage with color coding (green = low, yellow = medium, red = high); the **right ring** shows your threshold setting
+3. The panel displays both percentages and actual token counts (e.g., "15% (4,200/28,000)")
+4. Drag the slider to set the threshold (1%–90%, per-session independent; **new sessions default to 70%** until you drag, affecting only the current session, not others)
+5. From then on, whenever usage exceeds the threshold (before a step in a turn, or at turn end), the plugin automatically compacts and continues
 
-## 工作原理
+## How it works
 
-- **Host 半**（`lib/index.js`）：监听 `agent/pre-step`（回合中每步之前，waterfall 中间件）与 `agent/turn-stopping`（回合结束，串行事件）两个事件，读取当前会话阈值与用量（`tokenMeter.measure()` / `contextPressure` 投影），超阈值时调用 `agentPresets.serviceFor(agent, 'compaction').compactIfNeeded(agent, 'context-overflow', signal)` 执行压缩 —— 走 context-overflow 分支，绕过引擎自身的 0.8 阈值检查，完全由滑杆决定。
-- **Client 半**（`lib/client.js`）：在 `conversation.input.right` 槽注册圆环 UI；阈值经自定义 webServer 路由 `/dsh-auto-compact/api`（host 侧直写 settings 服务，绕过 DSH `api.settings` 的官方命名空间白名单）读写（`dsh-auto-compact.thresholds[sessionId]`）；用量来自 `useProjection("contextPressure")` 实时投影。
+- **Host half** (`lib/index.js`): listens for `agent/pre-step` (before each step in a turn, waterfall middleware) and `agent/turn-stopping` (turn end, serial event), reads the current session threshold and usage (`tokenMeter.measure()` / `contextPressure` projection), and when over threshold calls `agentPresets.serviceFor(agent, 'compaction').compactIfNeeded(agent, 'context-overflow', signal)` to compact — taking the context-overflow path, bypassing the engine's own 0.8 threshold check, fully controlled by the slider.
+- **Client half** (`lib/client.js`): registers the ring UI in the `conversation.input.right` slot; the threshold is read/written via a custom webServer route `/dsh-auto-compact/api` (host side writes directly to the settings service, bypassing DSH `api.settings`'s official namespace allowlist) (`dsh-auto-compact.thresholds[sessionId]`); usage comes from the real-time `useProjection("contextPressure")` projection.
 
-## 依赖
+## Dependencies
 
-- 需要 DSH 的 `compaction-basic`（`@deepseek-ai/dsh-compaction-basic`）处于启用状态 —— 默认预设（standard / code / cordis）均已内置，`minimal` 预设除外
-- 所有 peer 依赖随 DSH 自带，无需额外安装
+- Requires DSH's `compaction-basic` (`@deepseek-ai/dsh-compaction-basic`) to be enabled — included in the default presets (standard / code / cordis), except the `minimal` preset
+- All peer dependencies ship with DSH; nothing extra to install
 
-## 许可证
+## License
 
 MIT
